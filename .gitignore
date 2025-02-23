@@ -1,0 +1,3 @@
+*.db  # Ignora i file del database (es. subscriptions.db)
+.env  # Ignora il file delle configurazioni sensibili
+__pycache__  # Ignora i file temporanei di Python
