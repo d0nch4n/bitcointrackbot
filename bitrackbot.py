@@ -14,7 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-
 import telegram
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, JobQueue, ContextTypes
@@ -22,16 +21,20 @@ import requests
 from pysqlcipher3 import dbapi2 as sqlite3
 import os
 from datetime import datetime
+from dotenv import load_dotenv  # Importa la libreria per caricare il file .env
 
-# Token del bot Telegram da file .env
+# Carica le variabili dal file .env
+load_dotenv()
+
+# Token del bot Telegram dal file .env
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 if TOKEN is None:
-    raise ValueError("La variabile d'ambiente TELEGRAM_TOKEN non è impostata.")
+    raise ValueError("La variabile TELEGRAM_TOKEN non è definita nel file .env.")
 
-# Chiave del database da file .env
+# Chiave del database dal file .env
 DB_KEY = os.getenv('DB_KEY')
 if DB_KEY is None:
-    raise ValueError("La variabile d'ambiente DB_KEY non è impostata.")
+    raise ValueError("La variabile DB_KEY non è definita nel file .env.")
 
 # URL base dell'API pubblica di Mempool.space
 MEMPOOL_API_URL = 'https://mempool.space/api'
