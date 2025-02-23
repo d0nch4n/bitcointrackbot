@@ -1,7 +1,9 @@
 # Bitcoin Track Bot by d0nch4n
 Un bot Telegram open source per monitorare transazioni Bitcoin e fee della mempool usando le API di Mempool.space.
 
-##Dati raccolti - i dati, seppur non personali, sono cifrati AES-256 tramite funzione SQLCipher
+## Dati raccolti 
+
+I dati, seppur non personali, sono cifrati AES-256 tramite funzione SQLCipher e sono i seguenti:
 - id telegram
 - indirizzi in monitoraggio
 - transazioni in monitoraggio
@@ -22,4 +24,4 @@ Un bot Telegram open source per monitorare transazioni Bitcoin e fee della mempo
 4. Avvia il bot: `python bitrackbot.py`
 
 ## Licenza
-GPL
+Questo progetto è distribuito sotto la GNU General Public License v3.0. Vedi il file [LICENSE] per i dettagli.
