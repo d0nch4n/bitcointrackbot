@@ -18,10 +18,11 @@ import telegram
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, JobQueue, ContextTypes
 import requests
-from pysqlcipher3 import dbapi2 as sqlite3
+#from pysqlcipher3 import dbapi2 as sqlite3
+from sqlcipher3 import dbapi2 as sqlite3  # Sostituisci "pysqlcipher3" con "sqlcipher3"
 import os
 from datetime import datetime
-from dotenv import load_dotenv  # Importa la libreria per caricare il file .env
+from dotenv import load_dotenv
 
 # Carica le variabili dal file .env
 load_dotenv()
@@ -35,6 +36,11 @@ if TOKEN is None:
 DB_KEY = os.getenv('DB_KEY')
 if DB_KEY is None:
     raise ValueError("La variabile DB_KEY non è definita nel file .env.")
+
+    # Indirizzo Lightning dal file .env
+LIGHTNING_ADDRESS = os.getenv('LIGHTNING_ADDRESS')
+if LIGHTNING_ADDRESS is None:
+    raise ValueError("La variabile LIGHTNING_ADDRESS non è definita nel file .env.")
 
 # URL base dell'API pubblica di Mempool.space
 MEMPOOL_API_URL = 'https://mempool.space/api'
@@ -66,8 +72,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/track_tx - Monitora una transazione per conferme specifiche\n'
         '/set_fee_threshold - Imposta una soglia per le fee (priorità media)\n'
         '/current_fees - Mostra le fee attuali (bassa, media, alta priorità)\n'
-        '/delete_my_data - Cancella tutti i tuoi dati dal database'
+        '/delete_my_data - Cancella tutti i tuoi dati dal database\n'
+        '/donate - Sostieni il progetto con una donazione'
     )
+
+# Funzione per il comando /donate
+async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    
+    # Messaggio di risposta con gli indirizzi
+    donation_message = (
+        "Grazie per voler supportare il Bitcoin Track Bot! ❤️\n\n"
+        "Puoi donare Bitcoin usando una transazione lightning:\n\n"
+        "**Lightning Network**:\n"
+        f"   `{LIGHTNING_ADDRESS}`\n\n"
+        "Ogni contributo aiuta a mantenere il bot attivo e a migliorarlo!"
+    )
+    
+    # Invia il messaggio all'utente
+    await update.message.reply_text(donation_message, parse_mode='Markdown')
 
 # Funzione per ottenere le transazioni di un indirizzo
 def get_address_transactions(address):
@@ -336,6 +358,7 @@ def main():
     application.add_handler(fee_conv_handler)
     application.add_handler(CommandHandler("current_fees", current_fees))
     application.add_handler(CommandHandler("delete_my_data", delete_my_data))
+    application.add_handler(CommandHandler("donate", donate))
 
     # Avvio dei job di monitoraggio (ogni 5 minuti = 300 secondi)
     application.job_queue.run_repeating(monitor_addresses, interval=300, first=0)
