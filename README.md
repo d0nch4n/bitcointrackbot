@@ -25,3 +25,8 @@ I dati, seppur non personali, sono cifrati AES-256 tramite funzione SQLCipher e 
 
 ## Licenza
 Questo progetto è distribuito sotto la GNU General Public License v3.0. Vedi il file [LICENSE] per i dettagli.
+
+## Dona
+Se questo progetto ti è piaciuto e vuoi sostenerlo, offrimi un caffè fulmineo! Grazie d:-D
+
+lnurl1dp68gurn8ghj7ampd3kx2ar0veekzar0wd5xjtnrdakj7tnhv4kxctttdehhwm30d3h82unvwqhk7ur9dejkgur9deskcarexg6q09lqhz
