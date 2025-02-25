@@ -83,7 +83,7 @@ async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     donation_message = (
         "Grazie per voler supportare il Bitcoin Track Bot! ❤️\n\n"
         "Puoi donare Bitcoin usando una transazione lightning:\n\n"
-        "**Lightning Network**:\n"
+        "****:\n"
         f"   `{LIGHTNING_ADDRESS}`\n\n"
         "Ogni contributo aiuta a mantenere il bot attivo e a migliorarlo!"
     )
@@ -238,7 +238,7 @@ def get_mempool_fees():
 
 # Comando /set_fee_threshold: Inizia la conversazione per impostare la soglia
 async def set_fee_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Inserisci la soglia per le fee (in sat/byte) per la priorità media (conferma entro ~1 ora):')
+    await update.message.reply_text('Inserisci la soglia per le fee (sat/byte) per la priorità media (conferma entro ~30 min):')
     return FEE_THRESHOLD_INPUT
 
 # Gestione dell'input della soglia per /set_fee_threshold
@@ -267,9 +267,9 @@ async def current_fees(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if fees:
         response = (
             f'Fee attuali della mempool (sat/byte):\n'
-            f'- Bassa priorità (minima): {fees["minimumFee"]}\n'
-            f'- Media priorità (~1 ora): {fees["hourFee"]}\n'
-            f'- Alta priorità (più veloce): {fees["fastestFee"]}'
+            f'- Bassa priorità (~1-3 ora): {fees["hourFee"]}\n'
+            f'- Media priorità (~30 min): {fees["halfHourFee"]}\n'
+            f'- Alta priorità (~10 min): {fees["fastestFee"]}'
         )
         await update.message.reply_text(response)
     else:
@@ -284,7 +284,7 @@ async def monitor_fees(context: ContextTypes.DEFAULT_TYPE):
     thresholds = c.fetchall()
     fees = get_mempool_fees()
     if fees:
-        current_fee = fees['hourFee']  # Priorità media
+        current_fee = fees['halfHourFee']  # Priorità media
         for user_id, threshold in thresholds:
             if current_fee < threshold:
                 await context.bot.send_message(
