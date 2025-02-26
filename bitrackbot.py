@@ -1,4 +1,4 @@
-# Bitcoin Track Bot
+# Bitcoin Track Bot v.1.1
 # Copyright (C) 2025 (d0nch4n)
 #
 # This program is free software: you can redistribute it and/or modify
@@ -18,11 +18,12 @@ import telegram
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, JobQueue, ContextTypes
 import requests
-#from pysqlcipher3 import dbapi2 as sqlite3
-from sqlcipher3 import dbapi2 as sqlite3  # Sostituisci "pysqlcipher3" con "sqlcipher3"
+from sqlcipher3 import dbapi2 as sqlite3
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+import re
+from bech32 import decode
 
 # Carica le variabili dal file .env
 load_dotenv()
@@ -37,7 +38,7 @@ DB_KEY = os.getenv('DB_KEY')
 if DB_KEY is None:
     raise ValueError("La variabile DB_KEY non è definita nel file .env.")
 
-    # Indirizzo Lightning dal file .env
+# Indirizzo Lightning dal file .env
 LIGHTNING_ADDRESS = os.getenv('LIGHTNING_ADDRESS')
 if LIGHTNING_ADDRESS is None:
     raise ValueError("La variabile LIGHTNING_ADDRESS non è definita nel file .env.")
@@ -52,6 +53,31 @@ TX_ID_INPUT = 3
 TX_CONFIRMATIONS_INPUT = 4
 FEE_THRESHOLD_INPUT = 5
 
+    # Funzione per validare indirizzi Bitcoin
+def is_valid_bitcoin_address(address):
+    # Controllo Legacy e P2SH con regex
+    if re.match(r'^(1|3)[a-km-zA-HJ-NP-Z1-9]{25,34}$', address):
+        return True
+    # Controllo Bech32/Bech32m (SegWit e Taproot)
+    if address.startswith('bc1'):
+        try:
+            # Decodifica l'indirizzo
+            hrp, data = decode('bc', address)
+            # Verifica che hrp sia un numero intero (0 per SegWit v0, 1 per Taproot)
+            if isinstance(hrp, int):
+                if hrp == 0 and address.startswith('bc1q') and len(address) == 42:
+                    return True  # SegWit v0 (P2WPKH)
+                elif hrp == 1 and address.startswith('bc1p') and len(address) == 62:
+                    return True  # Taproot (P2TR)
+            return False
+        except ValueError:
+            return False
+    return False
+
+# Funzione per validare ID transazioni
+def is_valid_txid(txid):
+    return len(txid) == 64 and all(c in '0123456789abcdefABCDEF' for c in txid)
+
 # Inizializzazione del database SQLite per salvare le sottoscrizioni
 def init_db():
     conn = sqlite3.connect('subscriptions.db')
@@ -60,10 +86,11 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS address_subscriptions (user_id TEXT, address TEXT, type TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS fee_thresholds (user_id TEXT, threshold REAL)')
     c.execute('CREATE TABLE IF NOT EXISTS tx_subscriptions (user_id TEXT, txid TEXT, confirmations INTEGER)')
+    c.execute('CREATE TABLE IF NOT EXISTS notified_transactions (user_id TEXT, txid TEXT)')  # Nuova tabella
     conn.commit()
     conn.close()
 
-# Comando /start: Mostra i comandi disponibili
+# Comando /start: mostra i comandi disponibili
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         'Ciao! Usa i seguenti comandi:\n'
@@ -78,43 +105,47 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Funzione per il comando /donate
 async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    
-    # Messaggio di risposta con gli indirizzi
     donation_message = (
         "Grazie per voler supportare il Bitcoin Track Bot! ❤️\n\n"
-        "Puoi donare Bitcoin usando una transazione lightning:\n\n"
-        "****:\n"
+        "Puoi donare Bitcoin usando una transazione Lightning:\n"
         f"   `{LIGHTNING_ADDRESS}`\n\n"
         "Ogni contributo aiuta a mantenere il bot attivo e a migliorarlo!"
     )
-    
-    # Invia il messaggio all'utente
     await update.message.reply_text(donation_message, parse_mode='Markdown')
 
-# Funzione per ottenere le transazioni di un indirizzo
+# Funzione per ottenere le transazioni di un indirizzo con gestione eccezioni
 def get_address_transactions(address):
     url = f'{MEMPOOL_API_URL}/address/{address}/txs'
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()
-    return []
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except requests.exceptions.RequestException:
+        return []
 
-# Funzione per ottenere i dettagli di una transazione
+# Funzione per ottenere i dettagli di una transazione con gestione eccezioni
 def get_transaction_details(txid):
     url = f'{MEMPOOL_API_URL}/tx/{txid}'
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()
-    return None
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except requests.exceptions.RequestException:
+        return None
 
-# Comando /track_send: Inizia la conversazione per monitorare un indirizzo per gli invii
+# Comando /track_send: inizia la conversazione per monitorare un indirizzo per gli invii
 async def track_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Inserisci l\'indirizzo Bitcoin da monitorare per gli invii:')
     return SEND_ADDRESS_INPUT
 
-# Gestione dell'input dell'indirizzo per /track_send
+# Gestione dell'input dell'indirizzo per /track_send con validazione
 async def set_send_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     address = update.message.text.strip()
+    if not is_valid_bitcoin_address(address):
+        await update.message.reply_text('Errore: indirizzo Bitcoin non valido. Riprova.')
+        return SEND_ADDRESS_INPUT
     user_id = str(update.message.from_user.id)
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")  # Imposta la chiave
@@ -125,14 +156,17 @@ async def set_send_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'Monitoraggio invio avviato per l\'indirizzo {address}.')
     return ConversationHandler.END
 
-# Comando /track_receive: Inizia la conversazione per monitorare un indirizzo per le ricezioni
+# Comando /track_receive: inizia la conversazione per monitorare un indirizzo per le ricezioni
 async def track_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Inserisci l\'indirizzo Bitcoin da monitorare per le ricezioni:')
     return RECEIVE_ADDRESS_INPUT
 
-# Gestione dell'input dell'indirizzo per /track_receive
+# Gestione dell'input dell'indirizzo per /track_receive con validazione
 async def set_receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     address = update.message.text.strip()
+    if not is_valid_bitcoin_address(address):
+        await update.message.reply_text('Errore: indirizzo Bitcoin non valido. Riprova.')
+        return RECEIVE_ADDRESS_INPUT
     user_id = str(update.message.from_user.id)
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")  # Imposta la chiave
@@ -143,14 +177,17 @@ async def set_receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(f'Monitoraggio ricezione avviato per l\'indirizzo {address}.')
     return ConversationHandler.END
 
-# Comando /track_tx: Inizia la conversazione per monitorare una transazione
+# Comando /track_tx: inizia la conversazione per monitorare una transazione
 async def track_tx(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Inserisci l\'ID della transazione (txid) da monitorare:')
     return TX_ID_INPUT
 
-# Gestione dell'input del txid per /track_tx
+# Gestione dell'input del txid per /track_tx con validazione
 async def set_tx_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     txid = update.message.text.strip()
+    if not is_valid_txid(txid):
+        await update.message.reply_text('Errore: ID transazione non valido. Deve essere una stringa esadecimale di 64 caratteri.')
+        return TX_ID_INPUT
     context.user_data['txid'] = txid
     await update.message.reply_text('Quante conferme desideri prima di ricevere la notifica? (Inserisci un numero)')
     return TX_CONFIRMATIONS_INPUT
@@ -176,7 +213,7 @@ async def set_tx_confirmations(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text('Errore: inserisci un numero valido.')
         return TX_CONFIRMATIONS_INPUT
 
-# Funzione di monitoraggio degli indirizzi sottoscritti
+# Funzione di monitoraggio degli indirizzi sottoscritti con tracciamento delle transazioni notificate
 async def monitor_addresses(context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")  # Imposta la chiave
@@ -187,6 +224,10 @@ async def monitor_addresses(context: ContextTypes.DEFAULT_TYPE):
         txs = get_address_transactions(address)
         for tx in txs:
             txid = tx['txid']
+            # Controlla se la transazione è già stata notificata
+            c.execute('SELECT 1 FROM notified_transactions WHERE user_id = ? AND txid = ?', (user_id, txid))
+            if c.fetchone():
+                continue  # Salta se già notificata
             tx_details = get_transaction_details(txid)
             if tx_details and tx_details.get('status', {}).get('confirmed', False):
                 # Controlla se l'indirizzo è mittente (input)
@@ -196,6 +237,7 @@ async def monitor_addresses(context: ContextTypes.DEFAULT_TYPE):
                         chat_id=user_id,
                         text=f'L\'indirizzo {address} ha inviato una transazione!\nTx: {txid}\nData: {block_time}'
                     )
+                    c.execute('INSERT INTO notified_transactions VALUES (?, ?)', (user_id, txid))
                 # Controlla se l'indirizzo è destinatario (output)
                 elif sub_type == 'receive' and any(out['scriptpubkey_address'] == address for out in tx_details.get('vout', [])):
                     block_time = datetime.fromtimestamp(tx_details["status"]["block_time"]).strftime('%Y-%m-%d %H:%M:%S')
@@ -203,6 +245,8 @@ async def monitor_addresses(context: ContextTypes.DEFAULT_TYPE):
                         chat_id=user_id,
                         text=f'L\'indirizzo {address} ha ricevuto una transazione!\nTx: {txid}\nData: {block_time}'
                     )
+                    c.execute('INSERT INTO notified_transactions VALUES (?, ?)', (user_id, txid))
+        conn.commit()  # Commit dopo aver processato tutte le transazioni per questa sottoscrizione
     conn.close()
 
 # Funzione di monitoraggio delle transazioni con conferme
@@ -215,28 +259,34 @@ async def monitor_transactions(context: ContextTypes.DEFAULT_TYPE):
     for user_id, txid, target_confirmations in subscriptions:
         tx_details = get_transaction_details(txid)
         if tx_details and tx_details.get('status', {}).get('confirmed', False):
-            current_confirmations = tx_details['status'].get('block_height', 0)
-            latest_block_height = requests.get(f'{MEMPOOL_API_URL}/blocks/tip/height').json()
-            confirmations = latest_block_height - current_confirmations + 1
-            if confirmations >= target_confirmations:
-                block_time = datetime.fromtimestamp(tx_details["status"]["block_time"]).strftime('%Y-%m-%d %H:%M:%S')
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f'La transazione {txid} ha raggiunto {confirmations} conferme!\nData: {block_time}'
-                )
-                c.execute('DELETE FROM tx_subscriptions WHERE user_id = ? AND txid = ?', (user_id, txid))
-                conn.commit()
+            block_height = tx_details['status'].get('block_height', 0)
+            try:
+                latest_block_height = requests.get(f'{MEMPOOL_API_URL}/blocks/tip/height').json()
+                confirmations = latest_block_height - block_height + 1
+                if confirmations >= target_confirmations:
+                    block_time = datetime.fromtimestamp(tx_details["status"]["block_time"]).strftime('%Y-%m-%d %H:%M:%S')
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f'La transazione {txid} ha raggiunto {confirmations} conferme!\nData: {block_time}'
+                    )
+                    c.execute('DELETE FROM tx_subscriptions WHERE user_id = ? AND txid = ?', (user_id, txid))
+                    conn.commit()
+            except (requests.exceptions.RequestException, ValueError):
+                continue  # Salta questa iterazione in caso di errore
     conn.close()
 
-# Funzione per ottenere le fee attuali della mempool
+# Funzione per ottenere le fee attuali della mempool con gestione eccezioni
 def get_mempool_fees():
     url = f'{MEMPOOL_API_URL}/v1/fees/recommended'
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()
-    return None
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except requests.exceptions.RequestException:
+        return None
 
-# Comando /set_fee_threshold: Inizia la conversazione per impostare la soglia
+# Comando /set_fee_threshold: inizia la conversazione per impostare la soglia
 async def set_fee_threshold(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Inserisci la soglia per le fee (sat/byte) per la priorità media (conferma entro ~30 min):')
     return FEE_THRESHOLD_INPUT
@@ -261,7 +311,7 @@ async def set_fee_threshold_value(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text('Errore: inserisci un numero valido.')
         return FEE_THRESHOLD_INPUT
 
-# Comando /current_fees: Mostra le fee attuali per tutte le priorità
+# Comando /current_fees: mostra le fee attuali per tutte le priorità
 async def current_fees(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fees = get_mempool_fees()
     if fees:
@@ -275,7 +325,7 @@ async def current_fees(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text('Errore: impossibile ottenere le fee.')
 
-# Funzione di monitoraggio delle fee (priorità media)
+# Funzione di monitoraggio delle fee (priorità media) con stop alla prima notifica
 async def monitor_fees(context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")  # Imposta la chiave
@@ -289,11 +339,19 @@ async def monitor_fees(context: ContextTypes.DEFAULT_TYPE):
             if current_fee < threshold:
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text=f'Le fee (priorità media) sono scese a {current_fee} sat/byte, sotto la tua soglia di {threshold}!'
+                    text=(
+                        f'Le fee (priorità media) sono scese a {current_fee} sat/byte, '
+                        f'sotto la tua soglia di {threshold}!\n\n'
+                        'Il monitoraggio per questa soglia è stato disattivato. '
+                        'Usa /set_fee_threshold per impostarne una nuova.'
+                    )
                 )
+                # Rimuovi la soglia dal database per l'utente
+                c.execute('DELETE FROM fee_thresholds WHERE user_id = ?', (user_id,))
+                conn.commit()
     conn.close()
 
-# Comando /delete_my_data: Cancella i dati dell'utente
+# Comando /delete_my_data: cancella i dati dell'utente
 async def delete_my_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.message.from_user.id)
     conn = sqlite3.connect('subscriptions.db')
@@ -302,6 +360,7 @@ async def delete_my_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute('DELETE FROM address_subscriptions WHERE user_id = ?', (user_id,))
     c.execute('DELETE FROM fee_thresholds WHERE user_id = ?', (user_id,))
     c.execute('DELETE FROM tx_subscriptions WHERE user_id = ?', (user_id,))
+    c.execute('DELETE FROM notified_transactions WHERE user_id = ?', (user_id,))  # Cancella anche le transazioni notificate
     conn.commit()
     conn.close()
     await update.message.reply_text('Tutti i tuoi dati sono stati cancellati dal database.')
