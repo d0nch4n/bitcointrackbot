@@ -1,0 +1,8 @@
+# Ignora il file .env
+.env
+
+# Ignora tutti i file con estensione .db
+*.db
+
+#Ignora i file temporanei di Python
+__pycache__
