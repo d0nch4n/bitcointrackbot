@@ -1,4 +1,4 @@
-# Bitcoin Track Bot v.1.0.0
+# Bitcoin Track Bot v.1.1.0
 # Copyright (C) 2025 Brienza Donato (d0nch4n)
 #
 # This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 # Thanks to Pieter Wuille for his segwit_addr.py program for Taproot checksum verify
-
+# Release notes: monitoraggio invii, ricezioni, transazioni solo per nuove transazioni post lancio comando di monitoraggio
 
 import telegram
 from telegram import Update
@@ -26,6 +26,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import re
 from segwit_addr import decode as segwit_decode
+import time
 
 # Caricamento delle variabili d'ambiente dal file .env
 load_dotenv()
@@ -55,6 +56,9 @@ TX_ID_INPUT = 3
 TX_CONFIRMATIONS_INPUT = 4
 FEE_THRESHOLD_INPUT = 5
 DELETE_MONITOR_INPUT = 6
+SEND_ADDRESS_INPUT_MEMPOOL = 7
+RECEIVE_ADDRESS_INPUT_MEMPOOL = 8
+TX_FEE_INPUT = 9  # Stato per /tx_fee come conversazione
 
 # Dizionario per mappare i comandi alle loro funzioni
 COMMAND_MAP = {
@@ -68,6 +72,12 @@ COMMAND_MAP = {
     '/delete_monitor': 'delete_monitor',
     '/delete_my_data': 'delete_my_data',
     '/donate': 'donate',
+    '/recent_blocks': 'recent_blocks',
+    '/fee_forecast': 'fee_forecast',
+    '/tx_fee': 'tx_fee',  # Gestito come conversazione
+    '/status': 'status',
+    '/track_send_mempool': 'track_send_mempool',
+    '/track_receive_mempool': 'track_receive_mempool',
 }
 
 # Funzione per validare indirizzi Bitcoin
@@ -99,10 +109,12 @@ def init_db():
         conn = sqlite3.connect('subscriptions.db')
         conn.execute(f"PRAGMA key = '{DB_KEY}'")
         c = conn.cursor()
-        c.execute('CREATE TABLE IF NOT EXISTS address_subscriptions (user_id TEXT, address TEXT, type TEXT)')
+        c.execute('CREATE TABLE IF NOT EXISTS address_subscriptions (user_id TEXT, address TEXT, type TEXT, timestamp INTEGER)')
         c.execute('CREATE TABLE IF NOT EXISTS fee_thresholds (user_id TEXT, threshold REAL)')
-        c.execute('CREATE TABLE IF NOT EXISTS tx_subscriptions (user_id TEXT, txid TEXT, confirmations INTEGER)')
+        c.execute('CREATE TABLE IF NOT EXISTS tx_subscriptions (user_id TEXT, txid TEXT, confirmations INTEGER, timestamp INTEGER)')
         c.execute('CREATE TABLE IF NOT EXISTS notified_transactions (user_id TEXT, txid TEXT)')
+        c.execute('CREATE TABLE IF NOT EXISTS mempool_address_subscriptions (user_id TEXT, address TEXT, type TEXT, timestamp INTEGER)')
+        c.execute('CREATE TABLE IF NOT EXISTS notified_mempool_transactions (user_id TEXT, txid TEXT)')
         conn.commit()
     except Exception:
         pass
@@ -121,7 +133,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '/list_monitors - Lista monitoraggi\n'
         '/delete_monitor - Cancella monitoraggio\n'
         '/delete_my_data - Cancella dati\n'
-        '/donate - Sostieni il progetto'
+        '/donate - Sostieni il progetto\n'
+        '/recent_blocks - Statistiche blocchi recenti\n'
+        '/fee_forecast - Previsioni fee\n'
+        '/tx_fee - Calcola fee transazione\n'
+        '/status - Dashboard rete\n'
+        '/track_send_mempool - Monitora invii non confermati\n'
+        '/track_receive_mempool - Monitora ricezioni non confermate'
     )
 
 # Comando /donate
@@ -136,6 +154,15 @@ async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Funzione per ottenere transazioni di un indirizzo
 def get_address_transactions(address):
     url = f'{MEMPOOL_API_URL}/address/{address}/txs'
+    try:
+        response = requests.get(url)
+        return response.json() if response.status_code == 200 else []
+    except requests.RequestException:
+        return []
+
+# Funzione per ottenere transazioni non confermate di un indirizzo
+def get_mempool_transactions(address):
+    url = f'{MEMPOOL_API_URL}/address/{address}/txs/mempool'
     try:
         response = requests.get(url)
         return response.json() if response.status_code == 200 else []
@@ -175,10 +202,11 @@ async def set_send_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text('Indirizzo non valido. Riprova.')
         return SEND_ADDRESS_INPUT
     user_id = str(update.effective_user.id)
+    timestamp = int(time.time())
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")
     c = conn.cursor()
-    c.execute('INSERT INTO address_subscriptions VALUES (?, ?, ?)', (user_id, address, 'send'))
+    c.execute('INSERT INTO address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'send', timestamp))
     conn.commit()
     conn.close()
     await update.message.reply_text(f'Monitoraggio invio avviato per {address}.')
@@ -196,10 +224,11 @@ async def set_receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text('Indirizzo non valido. Riprova.')
         return RECEIVE_ADDRESS_INPUT
     user_id = str(update.effective_user.id)
+    timestamp = int(time.time())
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")
     c = conn.cursor()
-    c.execute('INSERT INTO address_subscriptions VALUES (?, ?, ?)', (user_id, address, 'receive'))
+    c.execute('INSERT INTO address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'receive', timestamp))
     conn.commit()
     conn.close()
     await update.message.reply_text(f'Monitoraggio ricezione avviato per {address}.')
@@ -228,10 +257,11 @@ async def set_tx_confirmations(update: Update, context: ContextTypes.DEFAULT_TYP
             return TX_CONFIRMATIONS_INPUT
         user_id = str(update.effective_user.id)
         txid = context.user_data['txid']
+        timestamp = int(time.time())
         conn = sqlite3.connect('subscriptions.db')
         conn.execute(f"PRAGMA key = '{DB_KEY}'")
         c = conn.cursor()
-        c.execute('INSERT INTO tx_subscriptions VALUES (?, ?, ?)', (user_id, txid, confirmations))
+        c.execute('INSERT INTO tx_subscriptions VALUES (?, ?, ?, ?)', (user_id, txid, confirmations, timestamp))
         conn.commit()
         conn.close()
         await update.message.reply_text(f'Monitoraggio tx {txid} per {confirmations} conferme.')
@@ -245,9 +275,9 @@ async def monitor_addresses(context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")
     c = conn.cursor()
-    c.execute('SELECT DISTINCT user_id, address, type FROM address_subscriptions')
+    c.execute('SELECT user_id, address, type, timestamp FROM address_subscriptions')
     subscriptions = c.fetchall()
-    for user_id, address, sub_type in subscriptions:
+    for user_id, address, sub_type, activation_timestamp in subscriptions:
         txs = get_address_transactions(address)
         for tx in txs:
             txid = tx['txid']
@@ -256,12 +286,15 @@ async def monitor_addresses(context: ContextTypes.DEFAULT_TYPE):
                 continue
             tx_details = get_transaction_details(txid)
             if tx_details and tx_details.get('status', {}).get('confirmed', False):
-                block_time = datetime.fromtimestamp(tx_details["status"]["block_time"]).strftime('%Y-%m-%d %H:%M:%S')
+                block_time = tx_details["status"]["block_time"]
+                if block_time < activation_timestamp:
+                    continue
+                block_time_str = datetime.fromtimestamp(block_time).strftime('%Y-%m-%d %H:%M:%S')
                 if sub_type == 'send' and any(inp['prevout']['scriptpubkey_address'] == address for inp in tx_details.get('vin', [])):
-                    await context.bot.send_message(chat_id=user_id, text=f'Invio da {address}: {txid} il {block_time}')
+                    await context.bot.send_message(chat_id=user_id, text=f'Invio da {address}: {txid} il {block_time_str}')
                     c.execute('INSERT INTO notified_transactions VALUES (?, ?)', (user_id, txid))
                 elif sub_type == 'receive' and any(out['scriptpubkey_address'] == address for out in tx_details.get('vout', [])):
-                    await context.bot.send_message(chat_id=user_id, text=f'Ricezione su {address}: {txid} il {block_time}')
+                    await context.bot.send_message(chat_id=user_id, text=f'Ricezione su {address}: {txid} il {block_time_str}')
                     c.execute('INSERT INTO notified_transactions VALUES (?, ?)', (user_id, txid))
         conn.commit()
     conn.close()
@@ -271,18 +304,21 @@ async def monitor_transactions(context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('subscriptions.db')
     conn.execute(f"PRAGMA key = '{DB_KEY}'")
     c = conn.cursor()
-    c.execute('SELECT user_id, txid, confirmations FROM tx_subscriptions')
+    c.execute('SELECT user_id, txid, confirmations, timestamp FROM tx_subscriptions')
     subscriptions = c.fetchall()
-    for user_id, txid, target_confirmations in subscriptions:
+    for user_id, txid, target_confirmations, activation_timestamp in subscriptions:
         tx_details = get_transaction_details(txid)
         if tx_details and tx_details.get('status', {}).get('confirmed', False):
+            block_time = tx_details["status"]["block_time"]
+            if block_time < activation_timestamp:
+                continue
             block_height = tx_details['status'].get('block_height', 0)
             try:
                 latest_block_height = requests.get(f'{MEMPOOL_API_URL}/blocks/tip/height').json()
                 confirmations = latest_block_height - block_height + 1
                 if confirmations >= target_confirmations:
-                    block_time = datetime.fromtimestamp(tx_details["status"]["block_time"]).strftime('%Y-%m-%d %H:%M:%S')
-                    await context.bot.send_message(chat_id=user_id, text=f'Tx {txid} ha {confirmations} conferme il {block_time}')
+                    block_time_str = datetime.fromtimestamp(block_time).strftime('%Y-%m-%d %H:%M:%S')
+                    await context.bot.send_message(chat_id=user_id, text=f'Tx {txid} ha {confirmations} conferme il {block_time_str}. Monitoraggio terminato.')
                     c.execute('DELETE FROM tx_subscriptions WHERE user_id = ? AND txid = ?', (user_id, txid))
                     conn.commit()
             except (requests.RequestException, ValueError):
@@ -295,6 +331,18 @@ def get_mempool_fees():
     try:
         response = requests.get(url)
         return response.json() if response.status_code == 200 else None
+    except requests.RequestException:
+        return None
+
+# Ottenere dimensione mempool
+def get_mempool_size():
+    url = f'{MEMPOOL_API_URL}/mempool'
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            return data['count']
+        return None
     except requests.RequestException:
         return None
 
@@ -366,6 +414,8 @@ async def delete_my_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute('DELETE FROM fee_thresholds WHERE user_id = ?', (user_id,))
     c.execute('DELETE FROM tx_subscriptions WHERE user_id = ?', (user_id,))
     c.execute('DELETE FROM notified_transactions WHERE user_id = ?', (user_id,))
+    c.execute('DELETE FROM mempool_address_subscriptions WHERE user_id = ?', (user_id,))
+    c.execute('DELETE FROM notified_mempool_transactions WHERE user_id = ?', (user_id,))
     conn.commit()
     conn.close()
     await update.message.reply_text('Dati cancellati.')
@@ -382,6 +432,8 @@ async def list_monitors(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tx_subs = c.fetchall()
     c.execute('SELECT threshold FROM fee_thresholds WHERE user_id = ?', (user_id,))
     fee_thresholds = c.fetchall()
+    c.execute('SELECT address, type FROM mempool_address_subscriptions WHERE user_id = ?', (user_id,))
+    mempool_subs = c.fetchall()
     conn.close()
 
     all_monitors = []
@@ -391,39 +443,45 @@ async def list_monitors(update: Update, context: ContextTypes.DEFAULT_TYPE):
         all_monitors.extend([('tx', txid, conf) for txid, conf in tx_subs])
     if fee_thresholds:
         all_monitors.extend([('fee', threshold[0], None) for threshold in fee_thresholds])
+    if mempool_subs:
+        all_monitors.extend([('mempool', addr, typ) for addr, typ in mempool_subs])
 
     if not all_monitors:
         await update.message.reply_text('Nessun monitoraggio attivo.')
         return
 
-    # Costruzione del messaggio con sezioni separate e spazi tra di esse
     message = 'Monitoraggi attivi:\n'
     index = 1
 
-    # Sezione Indirizzi
     if any(m[0] == 'address' for m in all_monitors):
-        message += 'Indirizzi:\n'
+        message += 'Indirizzi (confermate):\n'
         for typ, val1, val2 in all_monitors:
             if typ == 'address':
                 message += f'{index}. {val1}, Tipo: {val2}\n'
                 index += 1
-        message += '\n'  # Spazio tra sezioni
+        message += '\n'
 
-    # Sezione Transazioni
     if any(m[0] == 'tx' for m in all_monitors):
         message += 'Transazioni:\n'
         for typ, val1, val2 in all_monitors:
             if typ == 'tx':
                 message += f'{index}. {val1}, Conferme: {val2}\n'
                 index += 1
-        message += '\n'  # Spazio tra sezioni
+        message += '\n'
 
-    # Sezione Soglie fee
     if any(m[0] == 'fee' for m in all_monitors):
         message += 'Soglie fee:\n'
         for typ, val1, _ in all_monitors:
             if typ == 'fee':
                 message += f'{index}. {val1} sat/byte\n'
+                index += 1
+        message += '\n'
+
+    if any(m[0] == 'mempool' for m in all_monitors):
+        message += 'Indirizzi (non confermate):\n'
+        for typ, val1, val2 in all_monitors:
+            if typ == 'mempool':
+                message += f'{index}. {val1}, Tipo: {val2}\n'
                 index += 1
 
     await update.message.reply_text(message)
@@ -441,6 +499,8 @@ async def delete_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tx_subs = c.fetchall()
     c.execute('SELECT threshold FROM fee_thresholds WHERE user_id = ?', (user_id,))
     fee_thresholds = c.fetchall()
+    c.execute('SELECT address, type FROM mempool_address_subscriptions WHERE user_id = ?', (user_id,))
+    mempool_subs = c.fetchall()
     conn.close()
 
     all_monitors = []
@@ -450,39 +510,45 @@ async def delete_monitor(update: Update, context: ContextTypes.DEFAULT_TYPE):
         all_monitors.extend([('tx', txid, conf) for txid, conf in tx_subs])
     if fee_thresholds:
         all_monitors.extend([('fee', threshold[0], None) for threshold in fee_thresholds])
+    if mempool_subs:
+        all_monitors.extend([('mempool', addr, typ) for addr, typ in mempool_subs])
 
     if not all_monitors:
         await update.message.reply_text('Nessun monitoraggio da cancellare.')
         return ConversationHandler.END
 
-    # Costruzione del messaggio con sezioni separate e spazi tra di esse
     message = 'Monitoraggi attivi:\n'
     index = 1
 
-    # Sezione Indirizzi
     if any(m[0] == 'address' for m in all_monitors):
-        message += 'Indirizzi:\n'
+        message += 'Indirizzi (confermate):\n'
         for typ, val1, val2 in all_monitors:
             if typ == 'address':
                 message += f'{index}. {val1}, Tipo: {val2}\n'
                 index += 1
-        message += '\n'  # Spazio tra sezioni
+        message += '\n'
 
-    # Sezione Transazioni
     if any(m[0] == 'tx' for m in all_monitors):
         message += 'Transazioni:\n'
         for typ, val1, val2 in all_monitors:
             if typ == 'tx':
                 message += f'{index}. {val1}, Conferme: {val2}\n'
                 index += 1
-        message += '\n'  # Spazio tra sezioni
+        message += '\n'
 
-    # Sezione Soglie fee
     if any(m[0] == 'fee' for m in all_monitors):
         message += 'Soglie fee:\n'
         for typ, val1, _ in all_monitors:
             if typ == 'fee':
                 message += f'{index}. {val1} sat/byte\n'
+                index += 1
+        message += '\n'
+
+    if any(m[0] == 'mempool' for m in all_monitors):
+        message += 'Indirizzi (non confermate):\n'
+        for typ, val1, val2 in all_monitors:
+            if typ == 'mempool':
+                message += f'{index}. {val1}, Tipo: {val2}\n'
                 index += 1
 
     context.user_data['all_monitors'] = all_monitors
@@ -507,6 +573,8 @@ async def set_delete_monitor_number(update: Update, context: ContextTypes.DEFAUL
             c.execute('DELETE FROM tx_subscriptions WHERE user_id = ? AND txid = ?', (user_id, val1))
         elif typ == 'fee':
             c.execute('DELETE FROM fee_thresholds WHERE user_id = ? AND threshold = ?', (user_id, val1))
+        elif typ == 'mempool':
+            c.execute('DELETE FROM mempool_address_subscriptions WHERE user_id = ? AND address = ? AND type = ?', (user_id, val1, val2))
         conn.commit()
         conn.close()
         await update.message.reply_text(f'Monitoraggio {typ} cancellato.')
@@ -514,6 +582,150 @@ async def set_delete_monitor_number(update: Update, context: ContextTypes.DEFAUL
     except ValueError:
         await update.message.reply_text('Numero non valido. Riprova.')
         return DELETE_MONITOR_INPUT
+
+# Comando /tx_fee come conversazione
+async def tx_fee(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text('Inserisci l\'ID della transazione (txid) per calcolare la fee:')
+    return TX_FEE_INPUT
+
+async def set_tx_fee_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    txid = update.message.text.strip()
+    if not is_valid_txid(txid):
+        await update.message.reply_text('TxID non valido. Riprova.')
+        return TX_FEE_INPUT
+    tx_details = get_transaction_details(txid)
+    if tx_details:
+        input_sum = sum(inp['prevout']['value'] for inp in tx_details['vin'] if 'prevout' in inp)
+        output_sum = sum(out['value'] for out in tx_details['vout'])
+        fee = input_sum - output_sum
+        if fee >= 0:
+            await update.message.reply_text(f"Fee pagata per tx {txid}: {fee} sat")
+        else:
+            await update.message.reply_text("Dati transazione incompleti o errati.")
+    else:
+        await update.message.reply_text("Impossibile ottenere i dettagli della transazione.")
+    return ConversationHandler.END
+
+# Comando /recent_blocks
+async def recent_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = f'{MEMPOOL_API_URL}/v1/blocks'
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            blocks = response.json()
+            message = "Ultimi blocchi minati:\n"
+            for block in blocks[:5]:
+                height = block['height']
+                tx_count = block['tx_count']
+                total_fees = block['extras']['totalFees']
+                message += f"Blocco {height}: {tx_count} tx, fee totali: {total_fees} sat\n"
+            await update.message.reply_text(message)
+        else:
+            await update.message.reply_text("Impossibile ottenere i dati dei blocchi.")
+    except requests.RequestException:
+        await update.message.reply_text("Errore di rete.")
+
+# Comando /fee_forecast
+async def fee_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = f'{MEMPOOL_API_URL}/v1/fees/mempool-blocks'
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            blocks = response.json()
+            message = "Previsioni fee per blocchi futuri:\n"
+            for i, block in enumerate(blocks[:3], 1):
+                fee_range = block['feeRange']
+                message += f"Blocco {i}: {fee_range[0]} - {fee_range[-1]} sat/byte\n"
+            await update.message.reply_text(message)
+        else:
+            await update.message.reply_text("Impossibile ottenere le previsioni fee.")
+    except requests.RequestException:
+        await update.message.reply_text("Errore di rete.")
+
+# Comando /status
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    fees = get_mempool_fees()
+    mempool_size = get_mempool_size()
+    tip_height = requests.get(f'{MEMPOOL_API_URL}/blocks/tip/height').json()
+    message = "Stato rete Bitcoin:\n"
+    if fees:
+        message += f"- Fee attuali: {fees['hourFee']}/{fees['halfHourFee']}/{fees['fastestFee']} sat/byte\n"
+    else:
+        message += "- Impossibile ottenere le fee.\n"
+    if mempool_size is not None:
+        message += f"- Mempool: {mempool_size} transazioni\n"
+    else:
+        message += "- Impossibile ottenere la dimensione della mempool.\n"
+    message += f"- Ultimo blocco: altezza {tip_height}\n"
+    await update.message.reply_text(message)
+
+# Comando /track_send_mempool
+async def track_send_mempool(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text('Inserisci l\'indirizzo BTC da monitorare per invii non confermati:')
+    return SEND_ADDRESS_INPUT_MEMPOOL
+
+async def set_send_address_mempool(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    address = update.message.text.strip()
+    if not is_valid_bitcoin_address(address):
+        await update.message.reply_text('Indirizzo non valido. Riprova.')
+        return SEND_ADDRESS_INPUT_MEMPOOL
+    user_id = str(update.effective_user.id)
+    timestamp = int(time.time())
+    conn = sqlite3.connect('subscriptions.db')
+    conn.execute(f"PRAGMA key = '{DB_KEY}'")
+    c = conn.cursor()
+    c.execute('INSERT INTO mempool_address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'send', timestamp))
+    conn.commit()
+    conn.close()
+    await update.message.reply_text(f'Monitoraggio invio non confermato avviato per {address}.')
+    return ConversationHandler.END
+
+# Comando /track_receive_mempool
+async def track_receive_mempool(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text('Inserisci l\'indirizzo BTC da monitorare per ricezioni non confermate:')
+    return RECEIVE_ADDRESS_INPUT_MEMPOOL
+
+async def set_receive_address_mempool(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    address = update.message.text.strip()
+    if not is_valid_bitcoin_address(address):
+        await update.message.reply_text('Indirizzo non valido. Riprova.')
+        return RECEIVE_ADDRESS_INPUT_MEMPOOL
+    user_id = str(update.effective_user.id)
+    timestamp = int(time.time())
+    conn = sqlite3.connect('subscriptions.db')
+    conn.execute(f"PRAGMA key = '{DB_KEY}'")
+    c = conn.cursor()
+    c.execute('INSERT INTO mempool_address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'receive', timestamp))
+    conn.commit()
+    conn.close()
+    await update.message.reply_text(f'Monitoraggio ricezione non confermata avviato per {address}.')
+    return ConversationHandler.END
+
+# Monitoraggio mempool
+async def monitor_mempool_addresses(context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect('subscriptions.db')
+    conn.execute(f"PRAGMA key = '{DB_KEY}'")
+    c = conn.cursor()
+    c.execute('SELECT user_id, address, type, timestamp FROM mempool_address_subscriptions')
+    subscriptions = c.fetchall()
+    for user_id, address, sub_type, activation_timestamp in subscriptions:
+        txs = get_mempool_transactions(address)
+        for tx in txs:
+            txid = tx['txid']
+            c.execute('SELECT 1 FROM notified_mempool_transactions WHERE user_id = ? AND txid = ?', (user_id, txid))
+            if c.fetchone():
+                continue
+            if sub_type == 'send' and any(inp['prevout']['scriptpubkey_address'] == address for inp in tx.get('vin', [])):
+                await context.bot.send_message(chat_id=user_id, text=f'Invio non confermato da {address}: {txid}')
+                c.execute('INSERT INTO notified_mempool_transactions VALUES (?, ?)', (user_id, txid))
+            elif sub_type == 'receive' and any(out['scriptpubkey_address'] == address for out in tx.get('vout', [])):
+                await context.bot.send_message(chat_id=user_id, text=f'Ricezione non confermata su {address}: {txid}')
+                c.execute('INSERT INTO notified_mempool_transactions VALUES (?, ?)', (user_id, txid))
+        conn.commit()
+    conn.close()
 
 # Configurazione e avvio del bot
 def main():
@@ -558,6 +770,27 @@ def main():
         fallbacks=[MessageHandler(filters.COMMAND, end_conversation)],
     )
 
+    # Handler per /tx_fee
+    tx_fee_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('tx_fee', tx_fee)],
+        states={TX_FEE_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_tx_fee_id)]},
+        fallbacks=[MessageHandler(filters.COMMAND, end_conversation)],
+    )
+
+    # Handler per /track_send_mempool
+    send_mempool_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('track_send_mempool', track_send_mempool)],
+        states={SEND_ADDRESS_INPUT_MEMPOOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_send_address_mempool)]},
+        fallbacks=[MessageHandler(filters.COMMAND, end_conversation)],
+    )
+
+    # Handler per /track_receive_mempool
+    receive_mempool_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('track_receive_mempool', track_receive_mempool)],
+        states={RECEIVE_ADDRESS_INPUT_MEMPOOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_receive_address_mempool)]},
+        fallbacks=[MessageHandler(filters.COMMAND, end_conversation)],
+    )
+
     # Aggiunta degli handler
     application.add_handler(CommandHandler("start", start))
     application.add_handler(send_conv_handler)
@@ -569,11 +802,18 @@ def main():
     application.add_handler(CommandHandler("list_monitors", list_monitors))
     application.add_handler(CommandHandler("delete_my_data", delete_my_data))
     application.add_handler(CommandHandler("donate", donate))
+    application.add_handler(CommandHandler("recent_blocks", recent_blocks))
+    application.add_handler(CommandHandler("fee_forecast", fee_forecast))
+    application.add_handler(tx_fee_conv_handler)
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(send_mempool_conv_handler)
+    application.add_handler(receive_mempool_conv_handler)
 
     # Configurazione job di monitoraggio
     application.job_queue.run_repeating(monitor_addresses, interval=300, first=0)
     application.job_queue.run_repeating(monitor_fees, interval=300, first=0)
     application.job_queue.run_repeating(monitor_transactions, interval=300, first=0)
+    application.job_queue.run_repeating(monitor_mempool_addresses, interval=300, first=0)
 
     # Avvio bot
     application.run_polling()

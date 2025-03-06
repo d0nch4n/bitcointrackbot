@@ -27,4 +27,4 @@
 - [Fixed] Removed `DISTINCT` from the query in `monitor_addresses` (no longer needed with the new timestamp system).
 
 ## [1.0.0] - 2025-03-04
-- [Added] First stable release with basic features.
+- [Added] First stable release with basic features

@@ -6,3 +6,6 @@
 
 #Ignora i file temporanei di Python
 __pycache__
+
+#Ignora file sistema MacOS
+.DS_Store
