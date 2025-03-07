@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+- Some implementations about Lightning in analysis.
+
+## [1.1.1] - 2025-03-07
 - [Changed] Modified `/recent_blocks` to display total fees in BTC instead of satoshis (converted by dividing by 100,000,000 with 8 decimal places).
 - [Changed] Modified `/fee_forecast` to round fee predictions to whole numbers using `round()` for better readability.
 - [Changed] Updated `/start` command message to reorder commands for clarity and consistency with added features.
@@ -27,4 +30,4 @@
 - [Fixed] Removed `DISTINCT` from the query in `monitor_addresses` (no longer needed with the new timestamp system).
 
 ## [1.0.0] - 2025-03-04
-- [Added] First stable release with basic features
+- [Added] First stable release with basic features.

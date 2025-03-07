@@ -13,9 +13,12 @@ I dati, seppur non personali, sono cifrati AES-256 tramite funzione SQLCipher e 
 - Monitora invii e ricezioni di uno o più indirizzi Bitcoin per ricevere una notifica
 - Monitora una o più transazioni -impostando un numero personalizzato di blocchi confermati- per ricevere una notifica
 - Monitora le fee della mempool -con soglie personalizzate- per ricevere una notifica
-- Visualizza le fee della mempool nel momento in cui lanci il comando
-- Visualizza la lista numerata di ciò che stai monitorando
-- Cancella un monitoraggio che avevi precedentemente impostato
+- Visualizza le fee della mempool in tempo reale
+- Visualizza la lista di ciò che stai monitorando
+- Cancella un monitoraggio precedentemente impostato
+- Visualizza lo stato della mempool: fee, altezza blocco, numero transazioni ultimo blocco
+- Visualizza dati relativi ad ultimo blocco confermato
+- Visualizza le fee di una transazione specifica
 - Cancella tutti i tuoi dati dal database
 - Effettua una donazione
 
@@ -29,10 +32,10 @@ I dati, seppur non personali, sono cifrati AES-256 tramite funzione SQLCipher e 
 4. Avvia il bot: `python3 bitrackbot.py`
 
 ## Licenza
-Questo progetto è distribuito sotto la GNU General Public License v3.0. Vedi il file [LICENSE] per i dettagli.
+Questo progetto è distribuito sotto la GNU General Public License v3.0. Vedi il file [LICENSE] per i dettagli. Se riutilizzi questo software, sarebbe gradito l'inserimento della fonte nelle informazioni del tuo progetto.
 
 ## Dona
-Se questo progetto ti è piaciuto e vuoi sostenerlo, offrimi un caffè fulmineo! Grazie d:-D
+Se questo progetto ti è piaciuto e vuoi sostenerlo -c'è una spesa di hosting che sostengo, oltre il tempo investito nel progetto-, offrimi un caffè fulmineo! Grazie d:-D
 
 <img src="https://github.com/d0nch4n/bitcointrackbot/blob/main/donate.png?raw=true" alt="Tips" width="200">
 
