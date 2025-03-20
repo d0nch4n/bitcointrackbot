@@ -1,5 +1,6 @@
-# Bitcoin Track Bot by Donato ₿rienza (d0nch4n)
-Un bot Telegram open source per monitorare transazioni Bitcoin e fee della mempool usando le API di Mempool.space.
+# Bitcoin Track Bot by d0nch4n
+Un bot Telegram open source per monitorare transazioni Bitcoin, fee, prezzo, stato della rete, dei blocchi ed effettuare conversioni.
+A tale scopo sono utilizzate le API di Mempool.space e Coingeko.
 
 ## Dati raccolti 
 
@@ -7,18 +8,22 @@ I dati, seppur non personali, sono cifrati AES-256 tramite funzione SQLCipher e 
 - id telegram
 - indirizzi in monitoraggio
 - transazioni in monitoraggio
-- soglie fee in monitoraggio
+- soglie in monitoraggio
 
 ## Funzionalità
 - Monitora invii e ricezioni di uno o più indirizzi Bitcoin per ricevere una notifica
 - Monitora una o più transazioni -impostando un numero personalizzato di blocchi confermati- per ricevere una notifica
 - Monitora le fee della mempool -con soglie personalizzate- per ricevere una notifica
 - Visualizza le fee della mempool in tempo reale
-- Visualizza la lista di ciò che stai monitorando
-- Cancella un monitoraggio precedentemente impostato
 - Visualizza lo stato della mempool: fee, altezza blocco, numero transazioni ultimo blocco
 - Visualizza dati relativi ad ultimo blocco confermato
 - Visualizza le fee di una transazione specifica
+- Visualizza il prezzo di bitcoin
+- Imposta notifiche ricorrenti per ricevere il prezzo di bitcoin in maniera periodica
+- Imposta soglia prezzo per ricevere notifica al raggiungimento
+- Converti eur/usd in sats o sats in eur/usd
+- Visualizza la lista di ciò che stai monitorando
+- Cancella uno dei monitoraggi precedentemente impostato
 - Cancella tutti i tuoi dati dal database
 - Effettua una donazione
 

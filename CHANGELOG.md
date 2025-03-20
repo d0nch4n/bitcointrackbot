@@ -3,6 +3,14 @@
 ## [Unreleased]
 - Some implementations about Lightning in analysis.
 
+## [1.2.0] - 2025-03-20
+
+- [Added] New `/track_solo_miner` to receive alert if a block is mined by a solo miner
+- [Added] New `/price` to receive the current bitcoin price in eur or usd
+- [Added] New `/set_price_alert` to receive a notification daily/weekly/monthly with bitcoin price
+- [Added] New `/set_price_threshold` to set bitcoin price threshold to receive alert 
+- [Added] New `/convert` to convert sats in eur/usd or eur/usd in sats
+
 ## [1.1.1] - 2025-03-07
 - [Changed] Modified `/recent_blocks` to display total fees in BTC instead of satoshis (converted by dividing by 100,000,000 with 8 decimal places).
 - [Changed] Modified `/fee_forecast` to round fee predictions to whole numbers using `round()` for better readability.
