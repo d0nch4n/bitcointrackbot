@@ -45,3 +45,4 @@ Se questo progetto ti è piaciuto e vuoi sostenerlo -c'è una spesa di hosting c
 <img src="https://github.com/d0nch4n/bitcointrackbot/blob/main/donate.png?raw=true" alt="Tips" width="200">
 
 LNURL1DP68GURN8GHJ7UMPW3EJUMT0VF5J7TNHV4KXCTTTDEHHWM30D3H82UNVWQHNZ7R9XQCR2E3HVSERSCNRXA3NSV3NTGWZGD
+LN address: d0nch4n@sats.mobi
