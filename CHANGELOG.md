@@ -3,6 +3,11 @@
 ## [Unreleased]
 - Some implementations about Lightning in analysis.
 
+## [1.2.1] - 2025-03-31
+
+- [Changed] Daily time notification to 07:00 UTC instead of 09.00
+- [Changed] LNURL for donations
+
 ## [1.2.0] - 2025-03-20
 
 - [Added] New `/track_solo_miner` to receive alert if a block is mined by a solo miner

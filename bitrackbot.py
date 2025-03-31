@@ -1,4 +1,4 @@
-# Bitcoin Track Bot v.1.2.0
+# Bitcoin Track Bot v.1.2.1
 # Copyright (C) 2025 d0nch4n
 #
 # This program is free software: you can redistribute it and/or modify
@@ -820,19 +820,19 @@ def calculate_next_notification_time(frequency):
             next_time += timedelta(days=1)
     elif frequency == 'weekly':
         days_ahead = (7 - now.weekday()) % 7
-        if days_ahead == 0 and now.time() >= time(9, 0):
+        if days_ahead == 0 and now.time() >= time(7, 0):
             days_ahead = 7
-        next_time = (now + timedelta(days=days_ahead)).replace(hour=9, minute=0, second=0, microsecond=0)
+        next_time = (now + timedelta(days=days_ahead)).replace(hour=7, minute=0, second=0, microsecond=0)
     elif frequency == 'monthly':
-        if now.day == 1 and now.time() < time(9, 0):
-            next_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if now.day == 1 and now.time() < time(7, 0):
+            next_time = now.replace(hour=7, minute=0, second=0, microsecond=0)
         else:
             next_month = now.month % 12 + 1
             next_year = now.year + (now.month // 12)
             if next_month == 13:
                 next_month = 1
                 next_year += 1
-            next_time = datetime(next_year, next_month, 1, 9, 0, 0, tzinfo=timezone.utc)
+            next_time = datetime(next_year, next_month, 1, 7, 0, 0, tzinfo=timezone.utc)
     return int(next_time.timestamp())
 
 # Callback per inviare la notifica del prezzo
@@ -922,7 +922,7 @@ async def set_currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
         conn.close()
         schedule_price_alert_job(context, user_id, next_notification_time)
-        await update.message.reply_text(f'Notifica prezzo impostata: {frequency} in {currency}. Le notifiche saranno inviate alle 10:00.')
+        await update.message.reply_text(f'Notifica prezzo impostata: {frequency} in {currency}. Le notifiche saranno inviate alle 07:00 UTC.')
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Input non valido. Inserisci un numero.')
