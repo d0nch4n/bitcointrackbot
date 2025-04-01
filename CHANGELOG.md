@@ -3,6 +3,11 @@
 ## [Unreleased]
 - Some implementations about Lightning in analysis.
 
+## [1.2.2] - 2025-03-31
+
+- [Fixed] Issue related to notifications
+- [Changed] Daily time notification to 09:00 UTC
+
 ## [1.2.1] - 2025-03-31
 
 - [Changed] Daily time notification to 07:00 UTC instead of 09.00
