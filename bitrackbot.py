@@ -815,7 +815,7 @@ async def current_price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def calculate_next_notification_time(frequency):
     now = datetime.now(timezone.utc)
     if frequency == 'daily':
-        next_time = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        next_time = now.replace(hour=7, minute=0, second=0, microsecond=0)
         if now >= next_time:
             next_time += timedelta(days=1)
     elif frequency == 'weekly':
