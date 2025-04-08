@@ -1,4 +1,4 @@
-# Bitcoin Track Bot v.1.2.2
+# Bitcoin Track Bot v.1.2.3
 # Copyright (C) 2025 d0nch4n
 #
 # This program is free software: you can redistribute it and/or modify
@@ -987,7 +987,11 @@ async def monitor_price_thresholds(context: ContextTypes.DEFAULT_TYPE):
             if current_price >= threshold:
                 await context.bot.send_message(chat_id=user_id, text=f'Il prezzo del Bitcoin ha raggiunto {current_price} {currency}, superando la tua soglia di {threshold} {currency}.')
                 c.execute('UPDATE price_thresholds SET notified = 1 WHERE user_id = ? AND currency = ? AND threshold = ?', (user_id, currency, threshold))
-                conn.commit()
+        
+            elif current_price < threshold:
+                await context.bot.send_message(chat_id=user_id, text=f'Il prezzo del Bitcoin è sceso sotto la tua soglia di {threshold} {currency}: ora è {current_price} {currency}.')
+                c.execute('UPDATE price_thresholds SET notified = 1 WHERE user_id = ? AND currency = ? AND threshold = ?', (user_id, currency, threshold))
+        conn.commit()
         conn.close()
     except Exception:
         pass
