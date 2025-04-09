@@ -1,4 +1,4 @@
-# Bitcoin Track Bot v.1.2.4
+# Bitcoin Track Bot v.1.2.5
 # Copyright (C) 2025 d0nch4n
 #
 # This program is free software: you can redistribute it and/or modify
@@ -117,16 +117,6 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS price_thresholds (user_id TEXT, currency TEXT, threshold REAL, notified INTEGER, direction TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS price_alerts (user_id TEXT PRIMARY KEY, frequency TEXT, currency TEXT, next_notification_time INTEGER)')
 
-    conn.commit()
-    conn.close()
-    # Da eliminare con prossima versione, inserito per popolare colonna direction
-    conn = sqlite3.connect('subscriptions.db')
-    conn.execute(f"PRAGMA key = '{DB_KEY}'")
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(price_thresholds)")
-    columns = [col[1] for col in c.fetchall()]
-    if 'direction' not in columns:
-        c.execute("ALTER TABLE price_thresholds ADD COLUMN direction TEXT")
     conn.commit()
     conn.close()
 
@@ -966,7 +956,7 @@ import requests
 async def set_price_threshold_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         threshold = float(update.message.text)
-        if threshold <= 0:
+        if threshold < 0:
             await update.message.reply_text('La soglia deve essere un numero positivo.')
             return PRICE_THRESHOLD_VALUE_INPUT
         user_id = str(update.effective_user.id)
@@ -981,10 +971,10 @@ async def set_price_threshold_value(update: Update, context: ContextTypes.DEFAUL
         # Determina la direzione
         if current_price < threshold:
             direction = 'above'
-            message = f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo raggiunge o supera questa soglia.'
+            message = f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo supera questa soglia.'
         else:  # current_price >= threshold
             direction = 'below'
-            message = f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo scende a o sotto questa soglia.'
+            message = f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo scende sotto questa soglia.'
 
         # Salva nel database
         conn = sqlite3.connect('subscriptions.db')

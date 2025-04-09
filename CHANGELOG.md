@@ -4,7 +4,11 @@
 - Some implementations about Lightning in analysis.
 
 
-## [1.2.4] - 2025-04-08
+## [1.2.5] - 2025-04-09
+
+- [Fixed] Bugfix to adjust text on price threshold alert
+
+## [1.2.4] - 2025-04-09
 
 - [Fixed] Bugfix related to not correct trigger about price threshold
 
