@@ -3,6 +3,15 @@
 ## [Unreleased]
 - Some implementations about Lightning in analysis.
 
+
+## [1.2.4] - 2025-04-08
+
+- [Fixed] Bugfix related to not correct trigger about price threshold
+
+## [1.2.3] - 2025-04-08
+
+- [Added] Notification also for price below a threshold
+
 ## [1.2.2] - 2025-03-31
 
 - [Fixed] Issue related to notifications

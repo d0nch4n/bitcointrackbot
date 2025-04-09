@@ -1,4 +1,4 @@
-# Bitcoin Track Bot v.1.2.3
+# Bitcoin Track Bot v.1.2.4
 # Copyright (C) 2025 d0nch4n
 #
 # This program is free software: you can redistribute it and/or modify
@@ -114,9 +114,19 @@ def init_db():
     c.execute('CREATE TABLE IF NOT EXISTS mempool_address_subscriptions (user_id TEXT, address TEXT, type TEXT, timestamp INTEGER)')
     c.execute('CREATE TABLE IF NOT EXISTS notified_mempool_transactions (user_id TEXT, txid TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS solo_miner_subscriptions (user_id TEXT, last_checked_height INTEGER)')
-    c.execute('CREATE TABLE IF NOT EXISTS price_thresholds (user_id TEXT, currency TEXT, threshold REAL, notified INTEGER)')
+    c.execute('CREATE TABLE IF NOT EXISTS price_thresholds (user_id TEXT, currency TEXT, threshold REAL, notified INTEGER, direction TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS price_alerts (user_id TEXT PRIMARY KEY, frequency TEXT, currency TEXT, next_notification_time INTEGER)')
 
+    conn.commit()
+    conn.close()
+    # Da eliminare con prossima versione, inserito per popolare colonna direction
+    conn = sqlite3.connect('subscriptions.db')
+    conn.execute(f"PRAGMA key = '{DB_KEY}'")
+    c = conn.cursor()
+    c.execute("PRAGMA table_info(price_thresholds)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'direction' not in columns:
+        c.execute("ALTER TABLE price_thresholds ADD COLUMN direction TEXT")
     conn.commit()
     conn.close()
 
@@ -951,6 +961,8 @@ async def set_price_threshold_currency(update: Update, context: ContextTypes.DEF
         await update.message.reply_text('Input non valido. Inserisci un numero.')
         return PRICE_THRESHOLD_CURRENCY_INPUT
 
+import requests
+
 async def set_price_threshold_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         threshold = float(update.message.text)
@@ -959,41 +971,72 @@ async def set_price_threshold_value(update: Update, context: ContextTypes.DEFAUL
             return PRICE_THRESHOLD_VALUE_INPUT
         user_id = str(update.effective_user.id)
         currency = context.user_data['currency']
+
+        # Recupera il prezzo corrente di Bitcoin
+        response = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur,usd')
+        data = response.json()
+        btc_prices = data['bitcoin']
+        current_price = btc_prices[currency.lower()]
+
+        # Determina la direzione
+        if current_price < threshold:
+            direction = 'above'
+            message = f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo raggiunge o supera questa soglia.'
+        else:  # current_price >= threshold
+            direction = 'below'
+            message = f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo scende a o sotto questa soglia.'
+
+        # Salva nel database
         conn = sqlite3.connect('subscriptions.db')
         conn.execute(f"PRAGMA key = '{DB_KEY}'")
         c = conn.cursor()
-        c.execute('INSERT INTO price_thresholds VALUES (?, ?, ?, 0)', (user_id, currency, threshold))
+        c.execute('INSERT INTO price_thresholds VALUES (?, ?, ?, 0, ?)', (user_id, currency, threshold, direction))
         conn.commit()
         conn.close()
-        await update.message.reply_text(f'Soglia di prezzo impostata a {threshold} {currency}. Riceverai una notifica quando il prezzo raggiunge o supera questa soglia.')
+
+        await update.message.reply_text(message)
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Input non valido. Inserisci un numero.')
         return PRICE_THRESHOLD_VALUE_INPUT
+    except Exception as e:
+        await update.message.reply_text('Errore durante l\'impostazione della soglia. Riprova.')
+        return PRICE_THRESHOLD_VALUE_INPUT
 
-# Monitoraggio soglie di prezzo
 async def monitor_price_thresholds(context: ContextTypes.DEFAULT_TYPE):
     try:
+        # Recupera i prezzi correnti di Bitcoin
         response = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur,usd')
         data = response.json()
         btc_prices = data['bitcoin']
+
+        # Connessione al database
         conn = sqlite3.connect('subscriptions.db')
         conn.execute(f"PRAGMA key = '{DB_KEY}'")
         c = conn.cursor()
-        c.execute('SELECT user_id, currency, threshold FROM price_thresholds WHERE notified = 0')
+        c.execute('SELECT user_id, currency, threshold, direction FROM price_thresholds WHERE notified = 0')
         thresholds = c.fetchall()
-        for user_id, currency, threshold in thresholds:
+
+        for user_id, currency, threshold, direction in thresholds:
             current_price = btc_prices[currency.lower()]
-            if current_price >= threshold:
-                await context.bot.send_message(chat_id=user_id, text=f'Il prezzo del Bitcoin ha raggiunto {current_price} {currency}, superando la tua soglia di {threshold} {currency}.')
-                c.execute('UPDATE price_thresholds SET notified = 1 WHERE user_id = ? AND currency = ? AND threshold = ?', (user_id, currency, threshold))
-        
-            elif current_price < threshold:
-                await context.bot.send_message(chat_id=user_id, text=f'Il prezzo del Bitcoin è sceso sotto la tua soglia di {threshold} {currency}: ora è {current_price} {currency}.')
-                c.execute('UPDATE price_thresholds SET notified = 1 WHERE user_id = ? AND currency = ? AND threshold = ?', (user_id, currency, threshold))
+            if direction == 'above' and current_price >= threshold:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f'Il prezzo del Bitcoin ha raggiunto o superato la tua soglia di {threshold} {currency}: ora è {current_price} {currency}.'
+                )
+                c.execute('UPDATE price_thresholds SET notified = 1 WHERE user_id = ? AND currency = ? AND threshold = ?',
+                          (user_id, currency, threshold))
+            elif direction == 'below' and current_price <= threshold:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f'Il prezzo del Bitcoin è sceso a o sotto la tua soglia di {threshold} {currency}: ora è {current_price} {currency}.'
+                )
+                c.execute('UPDATE price_thresholds SET notified = 1 WHERE user_id = ? AND currency = ? AND threshold = ?',
+                          (user_id, currency, threshold))
+
         conn.commit()
         conn.close()
-    except Exception:
+    except Exception as e:
         pass
 
 # Comando /convert
