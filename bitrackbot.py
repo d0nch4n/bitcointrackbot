@@ -1,4 +1,4 @@
-# Bitcoin Track Bot v.1.4.0
+# Bitcoin Track Bot v.1.4.1
 # Copyright (C) 2025 d0nch4n
 #
 # This program is free software: you can redistribute it and/or modify
@@ -26,7 +26,6 @@ from time import time, sleep
 from dotenv import load_dotenv
 import re
 from segwit_addr import decode as segwit_decode
-import logging
 
 # Caricamento delle variabili d'ambiente
 load_dotenv()
@@ -82,12 +81,6 @@ COMMAND_MAP = {
     '/convert': 'convert',
 }
 
-# Configurazione logging
-logging.basicConfig(
-    level=logging.INFO,
-    filename='bot.log',
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 
 # Connessione persistente al database
 DB_CONN = sqlite3.connect('subscriptions.db')
@@ -187,8 +180,7 @@ def get_address_transactions(address):
         data = response.json() if response.status_code == 200 else []
         TX_CACHE[address] = {'data': data, 'timestamp': time()}
         return data
-    except requests.RequestException as e:
-        logging.error(f"Errore API per {address}: {e}")
+    except requests.RequestException:
         return []
 
 def get_mempool_transactions(address):
@@ -196,8 +188,7 @@ def get_mempool_transactions(address):
     try:
         response = requests.get(f'{MEMPOOL_API_URL}/address/{address}/txs/mempool')
         return response.json() if response.status_code == 200 else []
-    except requests.RequestException as e:
-        logging.error(f"Errore API mempool per {address}: {e}")
+    except requests.RequestException:
         return []
 
 def get_transaction_details(txid):
@@ -205,8 +196,7 @@ def get_transaction_details(txid):
     try:
         response = requests.get(f'{MEMPOOL_API_URL}/tx/{txid}')
         return response.json() if response.status_code == 200 else None
-    except requests.RequestException as e:
-        logging.error(f"Errore API per txid {txid}: {e}")
+    except requests.RequestException:
         return None
 
 def get_last_block_height():
@@ -214,8 +204,7 @@ def get_last_block_height():
     try:
         response = requests.get(f'{MEMPOOL_API_URL}/blocks/tip/height')
         return response.json() if response.status_code == 200 else None
-    except requests.RequestException as e:
-        logging.error(f"Errore API per altezza blocco: {e}")
+    except requests.RequestException:
         return None
 
 def get_block_details(height):
@@ -223,8 +212,7 @@ def get_block_details(height):
     try:
         response = requests.get(f'{MEMPOOL_API_URL}/block/{height}')
         return response.json() if response.status_code == 200 else None
-    except requests.RequestException as e:
-        logging.error(f"Errore API per blocco {height}: {e}")
+    except requests.RequestException:
         return None
 
 def get_block_miner(block_details):
@@ -236,8 +224,7 @@ def get_mempool_fees():
     try:
         response = requests.get(f'{MEMPOOL_API_URL}/v1/fees/recommended')
         return response.json() if response.status_code == 200 else None
-    except requests.RequestException as e:
-        logging.error(f"Errore API per fee mempool: {e}")
+    except requests.RequestException:
         return None
 
 def get_mempool_size():
@@ -245,8 +232,7 @@ def get_mempool_size():
     try:
         response = requests.get(f'{MEMPOOL_API_URL}/mempool')
         return response.json()['count'] if response.status_code == 200 else None
-    except requests.RequestException as e:
-        logging.error(f"Errore API per dimensione mempool: {e}")
+    except requests.RequestException:
         return None
 
 # Funzione per aggiornare la cache dei prezzi
@@ -259,8 +245,7 @@ async def update_price_cache(context: ContextTypes.DEFAULT_TYPE):
         context.bot_data['btc_prices']['eur'] = data['bpi']['EUR']['rate_float']
         context.bot_data['btc_prices']['usd'] = data['bpi']['USD']['rate_float']
         context.bot_data['last_price_update'] = time()
-    except Exception as e:
-        logging.error(f"Errore aggiornamento cache prezzi: {e}")
+    except Exception:
         try:
             # Fallback a Blockchain.com
             response = requests.get('https://blockchain.info/ticker')
@@ -269,7 +254,7 @@ async def update_price_cache(context: ContextTypes.DEFAULT_TYPE):
             context.bot_data['btc_prices']['usd'] = data['USD']['last']
             context.bot_data['last_price_update'] = time()
         except Exception as e:
-            logging.error(f"Errore fallback aggiornamento cache prezzi: {e}")
+            print(f"Errore fallback aggiornamento cache prezzi: {e}")
 
 # Gestione conversazioni
 async def end_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -303,7 +288,6 @@ async def set_send_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute('INSERT INTO address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'send', timestamp))
     DB_CONN.commit()
     await update.message.reply_text(f'Monitoraggio invio avviato per {address}.')
-    logging.info(f"Monitoraggio invio avviato per {address} da {user_id}")
     return ConversationHandler.END
 
 # Comando /track_receive
@@ -325,7 +309,6 @@ async def set_receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE
     c.execute('INSERT INTO address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'receive', timestamp))
     DB_CONN.commit()
     await update.message.reply_text(f'Monitoraggio ricezione avviato per {address}.')
-    logging.info(f"Monitoraggio ricezione avviato per {address} da {user_id}")
     return ConversationHandler.END
 
 # Comando /track_tx
@@ -359,7 +342,6 @@ async def set_tx_confirmations(update: Update, context: ContextTypes.DEFAULT_TYP
         c.execute('INSERT INTO tx_subscriptions VALUES (?, ?, ?, ?)', (user_id, txid, confirmations, timestamp))
         DB_CONN.commit()
         await update.message.reply_text(f'Monitoraggio tx {txid} per {confirmations} conferme.')
-        logging.info(f"Monitoraggio tx {txid} per {confirmations} conferme da {user_id}")
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Numero non valido. Riprova.')
@@ -415,8 +397,8 @@ async def monitor_transactions(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=user_id, text=f'Tx {txid} ha {confirmations} conferme il {block_time_str}.')
                     c.execute('DELETE FROM tx_subscriptions WHERE user_id = ? AND txid = ?', (user_id, txid))
                     DB_CONN.commit()
-            except (requests.RequestException, ValueError) as e:
-                logging.error(f"Errore monitoraggio tx {txid}: {e}")
+            except (requests.RequestException, ValueError):
+                pass
 
 async def monitor_fees(context: ContextTypes.DEFAULT_TYPE):
     """Monitora le fee medie rispetto alle soglie impostate, considerando la direzione."""
@@ -466,7 +448,6 @@ async def set_fee_threshold_value(update: Update, context: ContextTypes.DEFAULT_
                   (user_id, threshold, direction))
         DB_CONN.commit()
         await update.message.reply_text(message)
-        logging.info(f"Soglia fee impostata a {threshold} sat/byte ({direction}) da {user_id}")
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Numero non valido. Riprova.')
@@ -502,7 +483,6 @@ async def delete_my_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute('DELETE FROM price_thresholds WHERE user_id = ?', (user_id,))
     DB_CONN.commit()
     await update.message.reply_text('Dati cancellati.')
-    logging.info(f"Dati cancellati per {user_id}")
 
 # Comando /list_monitors
 async def list_monitors(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -677,7 +657,6 @@ async def set_delete_monitor_number(update: Update, context: ContextTypes.DEFAUL
             c.execute('DELETE FROM price_thresholds WHERE user_id = ? AND currency = ? AND threshold = ?', (user_id, val1, val2))
         DB_CONN.commit()
         await update.message.reply_text(f'Monitoraggio {typ} cancellato.')
-        logging.info(f"Monitoraggio {typ} cancellato da {user_id}")
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Numero non valido. Riprova.')
@@ -726,8 +705,7 @@ async def recent_blocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message)
         else:
             await update.message.reply_text("Impossibile ottenere i dati dei blocchi.")
-    except requests.RequestException as e:
-        logging.error(f"Errore API per blocchi recenti: {e}")
+    except requests.RequestException:
         await update.message.reply_text("Errore di rete.")
 
 # Comando /fee_forecast
@@ -746,8 +724,7 @@ async def fee_forecast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(message)
         else:
             await update.message.reply_text("Impossibile ottenere le previsioni fee.")
-    except requests.RequestException as e:
-        logging.error(f"Errore API per fee forecast: {e}")
+    except requests.RequestException:
         await update.message.reply_text("Errore di rete.")
 
 # Comando /status
@@ -781,7 +758,6 @@ async def set_send_address_mempool(update: Update, context: ContextTypes.DEFAULT
     c.execute('INSERT INTO mempool_address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'send', timestamp))
     DB_CONN.commit()
     await update.message.reply_text(f'Monitoraggio invio non confermato avviato per {address}.')
-    logging.info(f"Monitoraggio invio non confermato avviato per {address} da {user_id}")
     return ConversationHandler.END
 
 # Comando /track_receive_mempool
@@ -803,7 +779,6 @@ async def set_receive_address_mempool(update: Update, context: ContextTypes.DEFA
     c.execute('INSERT INTO mempool_address_subscriptions VALUES (?, ?, ?, ?)', (user_id, address, 'receive', timestamp))
     DB_CONN.commit()
     await update.message.reply_text(f'Monitoraggio ricezione non confermata avviato per {address}.')
-    logging.info(f"Monitoraggio ricezione non confermata avviato per {address} da {user_id}")
     return ConversationHandler.END
 
 # Monitoraggio mempool
@@ -842,7 +817,6 @@ async def track_solo_miner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute('INSERT OR REPLACE INTO solo_miner_subscriptions (user_id, last_checked_height) VALUES (?, ?)', (user_id, height))
     DB_CONN.commit()
     await update.message.reply_text('Monitoraggio dei blocchi minati da "solo miner" avviato.')
-    logging.info(f"Monitoraggio solo miner avviato da {user_id}")
 
 # Monitoraggio solo miner
 async def monitor_solo_miners(context: ContextTypes.DEFAULT_TYPE):
@@ -993,7 +967,6 @@ async def set_currency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         DB_CONN.commit()
         schedule_price_alert_job(context, user_id, next_notification_time)
         await update.message.reply_text(f'Notifica prezzo impostata: {frequency} in {currency}. Le notifiche saranno inviate alle 07:00 UTC.')
-        logging.info(f"Notifica prezzo impostata: {frequency} in {currency} da {user_id}")
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Input non valido. Inserisci un numero.')
@@ -1052,7 +1025,6 @@ async def set_price_threshold_value(update: Update, context: ContextTypes.DEFAUL
         DB_CONN.commit()
 
         await update.message.reply_text(message)
-        logging.info(f"Soglia prezzo impostata a {threshold} {currency} ({direction}) da {user_id}")
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text('Input non valido. Inserisci un numero.')

@@ -3,6 +3,10 @@
 ## [Unreleased]
 - Some implementations about Lightning in analysis.
 
+## [1.4.1] - 2025-04-22
+
+- [Removed] Debugging logs removed from source code
+
 ## [1.4.0] - 2025-04-22
 
 - [Fixed] Bugfix related to fee_threshold command
