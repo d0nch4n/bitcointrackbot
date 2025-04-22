@@ -3,6 +3,11 @@
 ## [Unreleased]
 - Some implementations about Lightning in analysis.
 
+## [1.4.0] - 2025-04-22
+
+- [Fixed] Bugfix related to fee_threshold command
+- [Added] Use of cache for informations retrive about price, fees and so on
+- [Added] Block API fallback for price retrieve if Coingeko fails
 
 ## [1.2.5] - 2025-04-09
 
